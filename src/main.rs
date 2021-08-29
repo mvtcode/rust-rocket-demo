@@ -4,14 +4,28 @@ extern crate dotenv;
 
 use dotenv::dotenv;
 use std::env;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::io;
-use rocket::tokio::time::{sleep, Duration};
-use rocket::http::Status;
+
 use rocket::Request;
+use rocket::http::Status;
 use rocket::tokio::task::spawn_blocking;
-use rocket::fs::NamedFile;
-use rocket::fs::{FileServer, relative};
+use rocket::tokio::time::{sleep, Duration};
+use rocket::fs::{NamedFile, FileServer, relative};
+use rocket::serde::{Serialize, Deserialize, json::Json};
+use rocket_dyn_templates::Template;
+
+#[derive(Responder)]
+#[response(status = 200, content_type = "json")]
+struct RawTeapotJson(String);
+
+#[derive(Deserialize, Serialize)]
+#[serde(crate = "rocket::serde")]
+struct Product<'a> {
+  name: &'a str,
+  sort: usize
+}
 
 // #[get("/")]
 // fn index() -> &'static str {
@@ -66,6 +80,29 @@ fn user_str(id: &str) -> String {
 //   "wellcome to API document"
 // }
 
+#[get("/product/json")]
+fn product_json() -> Json<Product<'static>> {
+  let product = Product {
+    name: "banana",
+    sort: 1
+  };
+
+  Json(product)
+}
+
+#[get("/template")]
+fn template() -> Template {
+  let mut context: HashMap<&str, &str> = HashMap::new();
+  context.insert("name", "HTML content from render template");
+
+  Template::render("index", &context)
+}
+
+#[get("/json")]
+fn json() -> RawTeapotJson {
+  RawTeapotJson(format!("{{\"{}\": \"{}\"}}", "name", "rocket"))
+}
+
 #[get("/<file..>")]
 async fn files(file: PathBuf) -> Option<NamedFile> {
   let mut path = Path::new(relative!("public")).join(file);
@@ -95,9 +132,10 @@ async fn main() {
 
   let _ = rocket::build()
     .register("/", catchers![not_found])
-    .mount("/", routes![files, info, delay, blocking_task, news_detail_int, news_detail_str, user, user_int, user_str]) // 
+    .mount("/", routes![files, info, delay, blocking_task, news_detail_int, news_detail_str, user, user_int, user_str, json, product_json, template]) // 
     .mount("/", FileServer::from(relative!("public")))
     // .mount("/docs", routes![docs])
+    .attach(Template::fairing())
     .launch()
     .await;
 }
